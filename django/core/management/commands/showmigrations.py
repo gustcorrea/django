@@ -88,9 +88,9 @@ class Command(BaseCommand):
                         title = plan_node[1]
                         if graph.nodes[plan_node].replaces:
                             title += " (%s squashed migrations)" % len(graph.nodes[plan_node].replaces)
-                        applied_migration = loader.applied_migrations.get(plan_node)
-                        # Mark it as applied/unapplied
-                        if applied_migration:
+                        if applied_migration := loader.applied_migrations.get(
+                            plan_node
+                        ):
                             output = ' [X] %s' % title
                             if self.verbosity >= 2 and hasattr(applied_migration, 'applied'):
                                 output += ' (applied at %s)' % applied_migration.applied.strftime('%Y-%m-%d %H:%M:%S')
@@ -128,10 +128,7 @@ class Command(BaseCommand):
 
         # Output
         def print_deps(node):
-            out = []
-            for parent in sorted(node.parents):
-                out.append("%s.%s" % parent.key)
-            if out:
+            if out := ["%s.%s" % parent.key for parent in sorted(node.parents)]:
                 return " ... (%s)" % ", ".join(out)
             return ""
 

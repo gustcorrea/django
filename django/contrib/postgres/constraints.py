@@ -74,8 +74,7 @@ class ExclusionConstraint(BaseConstraint):
             expression = expression.resolve_expression(query=query)
             sql, params = compiler.compile(expression)
             try:
-                opclass = self.opclasses[idx]
-                if opclass:
+                if opclass := self.opclasses[idx]:
                     sql = '%s %s' % (sql, opclass)
             except IndexError:
                 pass

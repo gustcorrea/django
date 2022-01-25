@@ -332,9 +332,7 @@ class BaseModelAdmin(metaclass=forms.MediaDefiningClass):
         """
         Hook for specifying fieldsets.
         """
-        if self.fieldsets:
-            return self.fieldsets
-        return [(None, {'fields': self.get_fields(request, obj)})]
+        return self.fieldsets or [(None, {'fields': self.get_fields(request, obj)})]
 
     def get_inlines(self, request, obj):
         """Hook for specifying custom inlines."""
@@ -364,9 +362,7 @@ class BaseModelAdmin(metaclass=forms.MediaDefiningClass):
         admin site. This is used by changelist_view.
         """
         qs = self.model._default_manager.get_queryset()
-        # TODO: this should be handled by some parameter to the ChangeList.
-        ordering = self.get_ordering(request)
-        if ordering:
+        if ordering := self.get_ordering(request):
             qs = qs.order_by(*ordering)
         return qs
 
@@ -1132,11 +1128,13 @@ class ModelAdmin(BaseModelAdmin):
         preserved_filters = self.get_preserved_filters(request)
         form_url = add_preserved_filters({'preserved_filters': preserved_filters, 'opts': opts}, form_url)
         view_on_site_url = self.get_view_on_site_url(obj)
-        has_editable_inline_admin_formsets = False
-        for inline in context['inline_admin_formsets']:
-            if inline.has_add_permission or inline.has_change_permission or inline.has_delete_permission:
-                has_editable_inline_admin_formsets = True
-                break
+        has_editable_inline_admin_formsets = any(
+            inline.has_add_permission
+            or inline.has_change_permission
+            or inline.has_delete_permission
+            for inline in context['inline_admin_formsets']
+        )
+
         context.update({
             'add': add,
             'change': change,
@@ -1197,8 +1195,7 @@ class ModelAdmin(BaseModelAdmin):
         # the presence of keys in request.POST.
 
         if IS_POPUP_VAR in request.POST:
-            to_field = request.POST.get(TO_FIELD_VAR)
-            if to_field:
+            if to_field := request.POST.get(TO_FIELD_VAR):
                 attr = str(to_field)
             else:
                 attr = obj._meta.pk.attname
@@ -1560,13 +1557,13 @@ class ModelAdmin(BaseModelAdmin):
         else:
             obj = self.get_object(request, unquote(object_id), to_field)
 
-            if request.method == 'POST':
-                if not self.has_change_permission(request, obj):
-                    raise PermissionDenied
-            else:
-                if not self.has_view_or_change_permission(request, obj):
-                    raise PermissionDenied
-
+            if (
+                request.method == 'POST'
+                and not self.has_change_permission(request, obj)
+                or request.method != 'POST'
+                and not self.has_view_or_change_permission(request, obj)
+            ):
+                raise PermissionDenied
             if obj is None:
                 return self._get_obj_does_not_exist_redirect(request, opts, object_id)
 
@@ -1594,14 +1591,13 @@ class ModelAdmin(BaseModelAdmin):
                     return self.response_change(request, new_object)
             else:
                 form_validated = False
+        elif add:
+            initial = self.get_changeform_initial_data(request)
+            form = ModelForm(initial=initial)
+            formsets, inline_instances = self._create_formsets(request, form.instance, change=False)
         else:
-            if add:
-                initial = self.get_changeform_initial_data(request)
-                form = ModelForm(initial=initial)
-                formsets, inline_instances = self._create_formsets(request, form.instance, change=False)
-            else:
-                form = ModelForm(instance=obj)
-                formsets, inline_instances = self._create_formsets(request, obj, change=True)
+            form = ModelForm(instance=obj)
+            formsets, inline_instances = self._create_formsets(request, obj, change=True)
 
         if not add and not self.has_change_permission(request, obj):
             readonly_fields = flatten_fieldsets(fieldsets)
@@ -1720,8 +1716,9 @@ class ModelAdmin(BaseModelAdmin):
         if (actions and request.method == 'POST' and
                 'index' in request.POST and '_save' not in request.POST):
             if selected:
-                response = self.response_action(request, queryset=cl.get_queryset(request))
-                if response:
+                if response := self.response_action(
+                    request, queryset=cl.get_queryset(request)
+                ):
                     return response
                 else:
                     action_failed = True
@@ -1732,15 +1729,19 @@ class ModelAdmin(BaseModelAdmin):
                 action_failed = True
 
         # Actions with confirmation
-        if (actions and request.method == 'POST' and
-                helpers.ACTION_CHECKBOX_NAME in request.POST and
-                'index' not in request.POST and '_save' not in request.POST):
-            if selected:
-                response = self.response_action(request, queryset=cl.get_queryset(request))
-                if response:
-                    return response
-                else:
-                    action_failed = True
+        if (
+            actions
+            and request.method == 'POST'
+            and helpers.ACTION_CHECKBOX_NAME in request.POST
+            and 'index' not in request.POST
+            and '_save' not in request.POST
+        ) and selected:
+            if response := self.response_action(
+                request, queryset=cl.get_queryset(request)
+            ):
+                return response
+            else:
+                action_failed = True
 
         if action_failed:
             # Redirect back to the changelist page to avoid resubmitting the
@@ -1790,11 +1791,7 @@ class ModelAdmin(BaseModelAdmin):
             formset = cl.formset = FormSet(queryset=cl.result_list)
 
         # Build the list of media to be used by the formset.
-        if formset:
-            media = self.media + formset.media
-        else:
-            media = self.media
-
+        media = self.media + formset.media if formset else self.media
         # Build the action form and populate it with available actions.
         if actions:
             action_form = self.action_form(auto_id=None)
@@ -2098,31 +2095,26 @@ class InlineModelAdmin(BaseModelAdmin):
                 templates it's not rendered using the field information, but
                 just using a generic "deletion_field" of the InlineModelAdmin.
                 """
-                if self.cleaned_data.get(DELETION_FIELD_NAME, False):
-                    using = router.db_for_write(self._meta.model)
-                    collector = NestedObjects(using=using)
-                    if self.instance._state.adding:
-                        return
-                    collector.collect([self.instance])
-                    if collector.protected:
-                        objs = []
-                        for p in collector.protected:
-                            objs.append(
-                                # Translators: Model verbose name and instance representation,
-                                # suitable to be an item in a list.
-                                _('%(class_name)s %(instance)s') % {
+                if not self.cleaned_data.get(DELETION_FIELD_NAME, False):
+                    return
+                using = router.db_for_write(self._meta.model)
+                collector = NestedObjects(using=using)
+                if self.instance._state.adding:
+                    return
+                collector.collect([self.instance])
+                if collector.protected:
+                    objs = [_('%(class_name)s %(instance)s') % {
                                     'class_name': p._meta.verbose_name,
-                                    'instance': p}
-                            )
-                        params = {
-                            'class_name': self._meta.model._meta.verbose_name,
-                            'instance': self.instance,
-                            'related_objects': get_text_list(objs, _('and')),
-                        }
-                        msg = _("Deleting %(class_name)s %(instance)s would require "
-                                "deleting the following protected related objects: "
-                                "%(related_objects)s")
-                        raise ValidationError(msg, code='deleting_protected', params=params)
+                                    'instance': p} for p in collector.protected]
+                    params = {
+                        'class_name': self._meta.model._meta.verbose_name,
+                        'instance': self.instance,
+                        'related_objects': get_text_list(objs, _('and')),
+                    }
+                    msg = _("Deleting %(class_name)s %(instance)s would require "
+                            "deleting the following protected related objects: "
+                            "%(related_objects)s")
+                    raise ValidationError(msg, code='deleting_protected', params=params)
 
             def is_valid(self):
                 result = super().is_valid()

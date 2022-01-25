@@ -295,7 +295,7 @@ class BaseHandler:
         """
         Raise an error if the view returned None or an uncalled coroutine.
         """
-        if not(response is None or asyncio.iscoroutine(response)):
+        if response is not None and not asyncio.iscoroutine(response):
             return
         if not name:
             if isinstance(callback, types.FunctionType):  # FBV
@@ -336,8 +336,7 @@ class BaseHandler:
         return a response for this exception, return None.
         """
         for middleware_method in self._exception_middleware:
-            response = middleware_method(request, exception)
-            if response:
+            if response := middleware_method(request, exception):
                 return response
         return None
 
