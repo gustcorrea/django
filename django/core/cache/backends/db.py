@@ -235,10 +235,7 @@ class DatabaseCache(BaseDatabaseCache):
         connection = connections[db]
         quote_name = connection.ops.quote_name
 
-        if settings.USE_TZ:
-            now = datetime.utcnow()
-        else:
-            now = datetime.now()
+        now = datetime.utcnow() if settings.USE_TZ else datetime.now()
         now = now.replace(microsecond=0)
 
         with connection.cursor() as cursor:
@@ -267,8 +264,7 @@ class DatabaseCache(BaseDatabaseCache):
                 cursor.execute(
                     connection.ops.cache_key_culling_sql() % table,
                     [cull_num])
-                last_cache_key = cursor.fetchone()
-                if last_cache_key:
+                if last_cache_key := cursor.fetchone():
                     cursor.execute(
                         'DELETE FROM %s WHERE cache_key < %%s' % table,
                         [last_cache_key[0]],

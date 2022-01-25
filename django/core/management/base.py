@@ -55,8 +55,11 @@ class CommandParser(ArgumentParser):
 
     def parse_args(self, args=None, namespace=None):
         # Catch missing argument for a better error message
-        if (self.missing_args_message and
-                not (args or any(not arg.startswith('-') for arg in args))):
+        if (
+            self.missing_args_message
+            and not args
+            and all(arg.startswith('-') for arg in args)
+        ):
             self.error(self.missing_args_message)
         return super().parse_args(args, namespace)
 
@@ -488,8 +491,7 @@ class BaseCommand:
             # No databases are configured (or the dummy one)
             return
 
-        plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
-        if plan:
+        if plan := executor.migration_plan(executor.loader.graph.leaf_nodes()):
             apps_waiting_migration = sorted({migration.app_label for migration, backwards in plan})
             self.stdout.write(
                 self.style.NOTICE(
@@ -532,8 +534,7 @@ class AppCommand(BaseCommand):
             raise CommandError("%s. Are you sure your INSTALLED_APPS setting is correct?" % e)
         output = []
         for app_config in app_configs:
-            app_output = self.handle_app_config(app_config, **options)
-            if app_output:
+            if app_output := self.handle_app_config(app_config, **options):
                 output.append(app_output)
         return '\n'.join(output)
 
@@ -568,8 +569,7 @@ class LabelCommand(BaseCommand):
     def handle(self, *labels, **options):
         output = []
         for label in labels:
-            label_output = self.handle_label(label, **options)
-            if label_output:
+            if label_output := self.handle_label(label, **options):
                 output.append(label_output)
         return '\n'.join(output)
 

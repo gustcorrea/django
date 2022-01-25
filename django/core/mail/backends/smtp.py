@@ -77,17 +77,16 @@ class EmailBackend(BaseEmailBackend):
         if self.connection is None:
             return
         try:
-            try:
-                self.connection.quit()
-            except (ssl.SSLError, smtplib.SMTPServerDisconnected):
-                # This happens when calling quit() on a TLS connection
-                # sometimes, or when the connection was already disconnected
-                # by the server.
-                self.connection.close()
-            except smtplib.SMTPException:
-                if self.fail_silently:
-                    return
-                raise
+            self.connection.quit()
+        except (ssl.SSLError, smtplib.SMTPServerDisconnected):
+            # This happens when calling quit() on a TLS connection
+            # sometimes, or when the connection was already disconnected
+            # by the server.
+            self.connection.close()
+        except smtplib.SMTPException:
+            if self.fail_silently:
+                return
+            raise
         finally:
             self.connection = None
 
@@ -106,8 +105,7 @@ class EmailBackend(BaseEmailBackend):
                 return 0
             num_sent = 0
             for message in email_messages:
-                sent = self._send(message)
-                if sent:
+                if sent := self._send(message):
                     num_sent += 1
             if new_conn_created:
                 self.close()

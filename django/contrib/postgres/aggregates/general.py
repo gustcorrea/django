@@ -18,9 +18,7 @@ class ArrayAgg(OrderableAggMixin, Aggregate):
         return ArrayField(self.source_expressions[0].output_field)
 
     def convert_value(self, value, expression, connection):
-        if not value:
-            return []
-        return value
+        return [] if not value else value
 
 
 class BitAnd(Aggregate):
@@ -48,9 +46,7 @@ class JSONBAgg(OrderableAggMixin, Aggregate):
     output_field = JSONField()
 
     def convert_value(self, value, expression, connection):
-        if not value:
-            return '[]'
-        return value
+        return '[]' if not value else value
 
 
 class StringAgg(OrderableAggMixin, Aggregate):
@@ -63,6 +59,4 @@ class StringAgg(OrderableAggMixin, Aggregate):
         super().__init__(expression, delimiter_expr, **extra)
 
     def convert_value(self, value, expression, connection):
-        if not value:
-            return ''
-        return value
+        return '' if not value else value
